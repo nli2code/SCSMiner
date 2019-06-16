@@ -1,8 +1,8 @@
 import org.apache.poi.ss.usermodel.*;
 
-public class Test1 {
+public class Test2 {
 
-  void fun(Workbook wb) {
+  private void fun(Workbook wb) {
     CellStyle style = wb.createCellStyle();
     Sheet sheet = wb.createSheet("sheet");
     Row row = sheet.createRow(0);

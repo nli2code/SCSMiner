@@ -7,28 +7,25 @@ import com.github.javaparser.ast.body.MethodDeclaration;
 import com.github.javaparser.ast.expr.MethodCallExpr;
 import com.github.javaparser.ast.stmt.TryStmt;
 import com.github.javaparser.ast.visitor.VoidVisitorAdapter;
+import org.apache.commons.lang3.StringUtils;
 import parser.entity.SCSFile;
 import parser.entity.SCSUnit;
 import parser.meta.DirExplorer;
 import utils.Config;
 
 import java.io.File;
+import java.io.FileWriter;
 import java.io.IOException;
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 public class CallSeqExtractor {
 
   static List<SCSFile> scsFiles = new ArrayList<>();
-  static Map<String, Boolean> focusApis = new HashMap<>();
-
-  public static void addApis(List<String> apis) {
-    for (String api: apis) {
-      focusApis.put(api, false);
-    }
-  }
+  static Set<String> focusApis;
+  static Map<String, List<String>> mmap = new HashMap<>();
+  static List<String> relatedFiles = new ArrayList<>();
 
   static class CallSeqVisitor implements DirExplorer.FileHandler {
     @Override
@@ -47,56 +44,51 @@ public class CallSeqExtractor {
           public void visit(MethodDeclaration n, Object arg) {
             scsUnit.setMethodShortName(n.getNameAsString());
             scsUnit.clear();
-            for (String api: focusApis.keySet()) {
-              focusApis.replace(api, false);
-            }
             super.visit(n, arg);
-            boolean containsAllFocusApis = true;
-            for (String api: focusApis.keySet()) {
-              if (!focusApis.get(api)) {
-                containsAllFocusApis = false;
-                break;
-              }
-            }
-            if (containsAllFocusApis) {
-              scsFile.addUnit(scsUnit.copy());
-            }
           }
           public void visit(MethodCallExpr n, Object arg) {
             super.visit(n, arg);
-            scsUnit.add(n.getNameAsString());
-            if (focusApis.containsKey(n.getNameAsString())) {
-              focusApis.replace(n.getNameAsString(), true);
+            String mName = n.getNameAsString();
+            if (mmap.containsKey(mName)) {
+              List<String> qNames = mmap.get(mName);
+              for (String lib : scsFile.getImportedLibraries()) {
+                for (String qName: qNames) {
+                  if (StringUtils.getCommonPrefix(qName, lib).equals(lib)) {
+//                    System.out.println(qName + " " + lib + " " + mName);
+                    scsFile.setLibRelated(true);
+                  }
+                }
+              }
             }
           }
-//          public void visit(TryStmt n, Object arg) {
-//            System.out.println("Start try");
-//            super.visit(n.getTryBlock(), arg);
-//            System.out.println("End try");
-//          }
         }.visit(JavaParser.parse(file), null);
-        // System.out.println();
       } catch (ParseProblemException | IOException e) {
         System.out.println("Exception found in parsing " + path);
         new RuntimeException(e);
       }
 
-      scsFiles.add(scsFile);
+      if (scsFile.getLibRelated()) {
+//        System.out.println(scsFile.getPath());
+        relatedFiles.add(scsFile.getPath());
+      }
     }
   }
 
-  public static List<SCSFile> extract(File projectDir) {
+  public static List<String> extract(File projectDir, Set<String> apis) {
+    for (String api: apis) {
+      String[] tokens = api.split("\\.");
+      if (tokens.length == 0) System.out.println(api);
+      String shortName = tokens[tokens.length - 1];
+      List<String> qNames = mmap.getOrDefault(shortName, new ArrayList<>());
+      qNames.add(api);
+      mmap.put(shortName, qNames);
+    }
     new DirExplorer(((level, path, file) -> path.endsWith("java")), new CallSeqVisitor())
             .explore(projectDir);
-    return scsFiles;
+    return relatedFiles;
   }
 
-  public static void main(String[] args) {
-    File projectDir = new File("data/test");
-    List<String> apis = new ArrayList<String>(){{add("setFillForegroundColor");}};
-    addApis(apis);
-    for (SCSFile scsFile: extract(projectDir)) {
-      System.out.println(scsFile.toString());
-    }
+  public static void main(String[] args) throws IOException {
+    System.out.println(StringUtils.getCommonPrefix("abs", "abd"));
   }
 }
